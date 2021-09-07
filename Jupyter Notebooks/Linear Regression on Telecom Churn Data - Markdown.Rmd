@@ -1,0 +1,132 @@
+---
+title: "Linear Regression on Telecom Churn Data - Markdown"
+author: "Alexander Vaillant"
+date: "9/6/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Environment Setup
+### Import Necessary Libraries
+
+```{r}
+# Load in necessary libraries using library()
+library(dplyr)
+library(tidyverse)
+library(caret)
+library(leaps)
+library(reshape2)
+library(fastDummies) #Create dummy columns easily
+library(plyr) # Rename columns
+```
+
+## Data Gathering
+### Load Dataset into Dataframe using read.csv()
+
+```{r}
+# Import the raw dataset by using read.csv()
+url <- "C:/Users/tedda/Desktop/Data Science Portfolio/Machine Learning/Supervised Learning/Regression/Linear Regression on Telecom Churn Data/Raw Datasets/churn_clean.csv"
+churndata <- read.csv(url, header = TRUE)
+```
+
+## Data Preparation
+
+```{r}
+# Remove any customer demographic data by indexing
+churn_indexed <- churndata[c(20:50)]
+
+# Filter the dataset to only Month-to-Month customers by using dplyr::filter()
+churn_filtered <- churn_indexed %>% filter(Contract=='Month-to-month')
+
+# Transform the categorical variables into dummy variable columns by using fastDummies::dummy_cols()
+churn_dummies <- dummy_cols(churn_filtered, remove_first_dummy = TRUE, remove_selected_columns = TRUE)
+
+# Index again to remove any unnecessary columns (Contract)
+churn_index <- churn_dummies[c(1:17,19:34)]
+
+# Rename any variables with spaces in their name by using plyr::rename()
+churn_renamed <- rename(churn_index, replace = c("InternetService_Fiber Optic" = "InternetService_Fiber_Optic"))
+churn_renamed <- rename(churn_renamed, replace = c("PaymentMethod_Credit Card (automatic)" = "PaymentMethod_Credit_Card_(automatic)"))
+churn_renamed <- rename(churn_renamed, replace = c("PaymentMethod_Electronic Check" = "PaymentMethod_Electronic_Check"))
+churn_renamed <- rename(churn_renamed, replace = c("PaymentMethod_Mailed Check" = "PaymentMethod_Mailed_Check"))
+
+# Create a Summary Output of the dataset by using summary()
+summary(churn_renamed)
+
+# Create a correlation matrix to help identify potential issues for multicollinearity
+cormatrix <- round(cor(churn_renamed),2)
+melted_cormatrix <- melt(cormatrix)
+ggplot(melted_cormatrix, aes(x = Var1, y= Var2, fill = value)) + geom_tile()
+cormatrix[,"Tenure"]
+write.csv(cormatrix,"C:/Users/tedda/Desktop/Data Science Portfolio/Machine Learning/Supervised Learning/Regression/Linear Regression on Telecom Churn Data/Explanations/Correlation Matrix/Correlation Matrix.csv", row.names = TRUE)
+
+# Remove Bandwidth_GB_Year from the analysis and dataset by indexing as it is highly correlated with Tenure to avoid multicollinearity.
+churn_nomult <- churn_renamed[c(1:6,8:33)]
+
+# Export the prepared dataset
+write.csv(churn_nomult, "C:/Users/tedda/Desktop/Data Science Portfolio/Machine Learning/Supervised Learning/Regression/Linear Regression on Telecom Churn Data/Cleansed Datasets/Prepped Dataset.csv", row.names = TRUE)
+```
+
+## Exploratory Data Analysis on Initial Model
+
+```{r}
+# Create the gross/initial model w/ MultiCollinearity
+MLR_GrossModel_Mlt <- lm(Tenure ~ ., churn_renamed)
+summary(MLR_GrossModel_Mlt)
+
+# Create the gross/initial model w/o MultiCollinearity
+MLR_GrossModel <- lm(Tenure ~ ., churn_nomult)
+summary(MLR_GrossModel)
+
+# Use Regression Subsets to find the top 3 variables which impact Tenure
+MLR_subsets <- regsubsets(Tenure ~ ., churn_nomult, nvmax = 3)
+summary(MLR_subsets)
+
+# Create Univariate visualizations of top 3 independent variables & dependent variable
+par(mfrow = c(2,2))
+Tenure_hist <- hist(churn_nomult$Tenure)
+ChurnYes_hist <- hist(churn_nomult$Churn_Yes)
+MonthlyCharge_hist <- hist(churn_nomult$MonthlyCharge)
+InternetServiceFiberOptic_hist <- hist(churn_nomult$InternetService_Fiber_Optic)
+
+# Create Bivariate visualizations of top 3 independent variables
+par(mfrow=c(1,3))
+ChurnYes_boxplot <- boxplot(Tenure ~ Churn_Yes, data = churn_nomult)
+MonthlyCharge_boxplot <- plot(Tenure ~ MonthlyCharge, data = churn_nomult)
+InternetServiceFiberOptic_boxplot <- boxplot(Tenure ~ InternetService_Fiber_Optic, data = churn_nomult)
+```
+
+## Model Building
+
+```{r}
+# Create the adjusted/reduced model
+MLR_AdjustedModel <- lm(Tenure ~ Churn_Yes + MonthlyCharge + InternetService_Fiber_Optic, churn_nomult)
+summary(MLR_AdjustedModel)
+
+# Identify the coefficients of the Adjusted Model
+coef(MLR_AdjustedModel)
+
+# Create the reduced model with only 2 variables (just for testing)
+MLR_Reduced2Model <- lm(Tenure ~ Churn_Yes + MonthlyCharge, churn_nomult)
+summary(MLR_Reduced2Model)
+```
+
+## Save and Load Model
+```{r}
+# Save and Load Model
+model_url <- "C:/Users/tedda/Desktop/Data Science Portfolio/Machine Learning/Supervised Learning/Regression/Linear Regression on Telecom Churn Data/Exported Models/TelecomMLRModel.rds"
+saveRDS(MLR_Reduced2Model, model_url)
+MLR_model <- readRDS(model_url)
+```
+
+## View residual plots of Trained Model
+
+```{r}
+# Residual Plots
+par(mfrow = c(2,2))
+plot(MLR_GrossModel)
+plot(MLR_model)
+```
